@@ -333,7 +333,9 @@ impl StanClient {
             subscriptions.insert((stan_sid.0).0.clone(), sub);
 
             tokio::spawn(async move {
+                debug!("Waiting for next message from subscription");
                 while let Some(nats_msg) = subscription.next().await {
+                    debug!("Message received from subscription");
                     let _ = sender.send(ClosableMessage::Message(nats_msg));
                 }
             });
@@ -471,8 +473,10 @@ impl Stream for StanClosableReceiver {
         let ack_inbox = this.ack_inbox.clone();
         let manual_acks = this.manual_acks;
         let stan_client = this.stan_client.clone();
+        debug!("Polling receiver");
         match this.receiver.poll_recv(cx) {
             Poll::Ready(Some(ClosableMessage::Message(nats_msg))) => {
+                debug!("Nats message ready");
                 let msg = protocol::MsgProto::decode(&nats_msg.payload[..]).unwrap();
                 let subject = msg.subject.clone();
                 let sequence = msg.sequence;
@@ -501,12 +505,14 @@ impl Stream for StanClosableReceiver {
                     ack_inbox: Some(ack_inbox.clone()),
                     ack_handler,
                 };
+                debug!("Stan message ready");
                 Poll::Ready(Some(stan_msg))
             }
             Poll::Ready(Some(ClosableMessage::Close)) => {
                 Poll::Ready(None)
             }
             Poll::Pending => {
+                debug!("Pending");
                 Poll::Pending
             }
             Poll::Ready(None) => {
