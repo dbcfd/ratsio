@@ -314,7 +314,6 @@ impl StanClient {
             let sub_response = protocol::SubscriptionResponse::decode(&sub_response.payload[..]).unwrap();
             let ack_inbox = sub_response.ack_inbox.clone();
             let (sid, mut subscription) = self.nats_client.subscribe(inbox.clone()).await?;
-            let mut subscriptions = self.subscriptions.write().await;
             let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
             let stan_sid = StanSid(sid);
             let sub = Subscription {
@@ -330,7 +329,10 @@ impl StanClient {
                 close_requests: client_info.close_requests.clone(),
                 sender: sender.clone(),
             };
-            subscriptions.insert((stan_sid.0).0.clone(), sub);
+            {
+                let mut subscriptions = self.subscriptions.write().await;
+                subscriptions.insert((stan_sid.0).0.clone(), sub);
+            }
 
             tokio::spawn(async move {
                 debug!("Waiting for next message from subscription");
