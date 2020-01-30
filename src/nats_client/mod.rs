@@ -7,11 +7,10 @@ use crate::ops::{ServerInfo, Op, Message, Subscribe};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use std::fmt::Debug;
 use futures::stream::{ SplitSink};
-use futures::lock::Mutex;
 use nom::lib::std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -114,7 +113,7 @@ pub struct NatsClientInner {
     /// Server info
     server_info: RwLock<Option<ServerInfo>>,
     subscriptions: Arc<Mutex<HashMap<String, (UnboundedSender<ClosableMessage>, Subscribe)>>>,
-    on_reconnect: tokio::sync::Mutex<Option<Pin<Box<dyn Future<Output=()> + Send + Sync>>>>,
+    on_reconnect: Mutex<Option<Pin<Box<dyn Future<Output=()> + Send + Sync>>>>,
     state: RwLock<NatsClientState>,
     last_ping: RwLock<u128>,
     client_ref: RwLock<Option<Arc<NatsClient>>>,

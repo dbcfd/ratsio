@@ -4,10 +4,9 @@ use futures::{StreamExt};
 use crate::nats_client::{NatsClient, NatsClientOptions, NatsClientInner, NatsSid, ReconnectHandler, NatsClientState};
 
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use crate::error::RatsioError;
 
-use futures::lock::Mutex;
 use nom::lib::std::collections::{HashMap};
 use futures::stream::Stream;
 
@@ -26,7 +25,7 @@ impl NatsClient {
                 opts,
                 server_info: RwLock::new(None),
                 subscriptions: Arc::new(Mutex::new(HashMap::default())),
-                on_reconnect: tokio::sync::Mutex::new(None),
+                on_reconnect: Mutex::new(None),
                 state: RwLock::new(NatsClientState::Connecting),
                 last_ping: RwLock::new(NatsClientInner::time_in_millis()),
                 reconnect_version: RwLock::new(version),
