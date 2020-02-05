@@ -73,13 +73,15 @@ async fn test_nats() -> Result<(), RatsioError> {
 async fn test_stan() -> Result<(), RatsioError> {
     logger_setup();
 
+    let subject = "foo";
+
     let opts = StanOptions::with_options(
         "nats://localhost:4222".to_owned(),
         "test-cluster",
         "stan-test",
     );
     let cli = StanClient::from_options(opts).await?;
-    let (sid, mut subscription) = cli.subscribe("foo", None, None).await?;
+    let (sid, mut subscription) = cli.subscribe(subject, None, None).await?;
     tokio::spawn(async move {
         while let Some(message) = subscription.next().await {
             info!(" << 1 >> got message --- {:?}\n\t{:?}", &message,
@@ -87,7 +89,7 @@ async fn test_stan() -> Result<(), RatsioError> {
         }
     });
 
-    let (_sid, mut subscription2) = cli.subscribe("foo", None, None).await?;
+    let (_sid, mut subscription2) = cli.subscribe(subject, None, None).await?;
     tokio::spawn(async move {
         while let Some(message) = subscription2.next().await {
             info!(" << 2 >> got message --- {:?}\n\t{:?}", &message,
@@ -97,13 +99,13 @@ async fn test_stan() -> Result<(), RatsioError> {
 
     tokio::time::delay_for(Duration::from_secs(5)).await;
     let payload = b"Publish Message 1".to_vec();
-    let _ = cli.publish("foo", payload.as_slice()).await?;
+    let _ = cli.publish(subject, payload.as_slice()).await?;
     tokio::time::delay_for(Duration::from_secs(1)).await;
     let _ = cli.un_subscribe(&sid).await?;
     tokio::time::delay_for(Duration::from_secs(3)).await;
 
     tokio::time::delay_for(Duration::from_secs(1)).await;
-    let _ = cli.publish("foo", b"Publish Message 2").await?;
+    let _ = cli.publish(subject, b"Publish Message 2").await?;
 
 
     let _discover_subject = "_STAN.discover.test-cluster";

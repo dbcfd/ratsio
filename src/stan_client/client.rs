@@ -59,9 +59,11 @@ impl StanClient {
 
         let mut connect_request_buf: Vec<u8> = Vec::with_capacity(64);
         connect_request.encode(&mut connect_request_buf).unwrap();
-        let connect_response = nats_client.request(discover_subject, connect_request_buf.as_slice()).await?;
+        let connect_response = nats_client.request(discover_subject.clone(), connect_request_buf.as_slice()).await?;
         let connect_response = protocol::ConnectResponse::decode(connect_response.payload.as_slice())?;
         let client_info: ClientInfo = connect_response.clone().into();
+
+        debug!("Subscribed to {}", discover_subject);
 
         let stan_client = Arc::new(StanClient {
             //subs_tx: Arc::new(RwLock::new(HashMap::default())),
@@ -98,8 +100,9 @@ impl StanClient {
 
     async fn process_heartbeats(nats_client: Arc<NatsClient>, id_generator: Arc<RwLock<NUID>>,
                                 conn_id: Vec<u8>, client_id: String, heartbeat_inbox: String) -> Result<(), RatsioError> {
-        debug!("Subscribing to heartbeat => {}", &heartbeat_inbox);
-        let (_sid, mut heartbeats) = nats_client.subscribe(heartbeat_inbox.clone()).await?;
+        debug!("Subscribing to heartbeat => {}", heartbeat_inbox);
+        let (sid, mut heartbeats) = nats_client.subscribe(heartbeat_inbox.clone()).await?;
+        debug!("Subscribed to heartbeats {} with sid {}", heartbeat_inbox, sid.0);
         while let Some(msg) = heartbeats.next().await {
             if let Some(reply_to) = msg.reply_to {
                 let reply_msg = protocol::PubMsg {
@@ -207,6 +210,7 @@ impl StanClient {
             let sub_response = protocol::SubscriptionResponse::decode(&sub_response.payload[..]).unwrap();
             let ack_inbox = sub_response.ack_inbox.clone();
             let (sid, mut subscription) = self.nats_client.subscribe(inbox.clone()).await?;
+            debug!("Resubscribed to {} with sid {}", inbox, sid.0);
             let mut subscriptions = self.subscriptions.write().await;
             let stan_sid = StanSid(sid);
             let new_sub = Subscription {
@@ -292,7 +296,8 @@ impl StanClient {
         let inbox: String = format!("_SUB.{}", self.id_generator.write().await.next());
 
         let sub_request = protocol::SubscriptionRequest {
-            client_id: self.client_id.clone(), subject: subject.to_string(),
+            client_id: self.client_id.clone(),
+            subject: subject.to_string(),
             q_group: queue_group.clone().map(|x| x.to_string()).unwrap_or_default(),
             durable_name: durable_name.clone().map(|x| x.to_string()).unwrap_or_default(),
             ack_wait_in_secs, max_in_flight, start_sequence,
@@ -314,6 +319,7 @@ impl StanClient {
             let sub_response = protocol::SubscriptionResponse::decode(&sub_response.payload[..]).unwrap();
             let ack_inbox = sub_response.ack_inbox.clone();
             let (sid, mut subscription) = self.nats_client.subscribe(inbox.clone()).await?;
+            debug!("Subscribed to {} with sid {} for subject {}", inbox, sid.0, subject);
             let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
             let stan_sid = StanSid(sid);
             let sub = Subscription {

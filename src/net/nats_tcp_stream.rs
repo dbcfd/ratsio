@@ -118,11 +118,9 @@ impl Stream for NatsTcpStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
-        match NatsTcpStream::decode(&mut this.read_buffer) {
-            Some(item) => {
-                return Poll::Ready(Some(item));
-            }
-            None => {}
+        if let Some(item) = NatsTcpStream::decode(&mut this.read_buffer) {
+            debug!("Decoded {:?}, buffer is {}B", item, this.read_buffer.len());
+            return Poll::Ready(Some(item));
         }
 
         let mut read_buffer = this.read_buffer;
@@ -134,15 +132,12 @@ impl Stream for NatsTcpStream {
             match this.stream_inner.as_mut().poll_read(cx, &mut buff) {
                 Poll::Ready(Ok(size)) => {
                     read_buffer.extend(&buff[0..size]);
+                    debug!("Read {}B, buffer is {}B", size, read_buffer.len());
                     //println!(" ----- buffer [{}]\n\t'{}'", size, std::str::from_utf8(read_buffer.as_ref()).unwrap());
                     if size > 0 {
-                        match NatsTcpStream::decode(&mut read_buffer) {
-                            Some(item) => {
-                                return Poll::Ready(Some(item));
-                            }
-                            None => {
-                                //continue consuming stream.
-                            }
+                        if let Some(item) = NatsTcpStream::decode(&mut read_buffer) {
+                            debug!("Decoded {:?}, buffer is {}B", item, read_buffer.len());
+                            return Poll::Ready(Some(item));
                         }
                     } else {
                         return Poll::Ready(None);
@@ -150,6 +145,7 @@ impl Stream for NatsTcpStream {
                 }
                 Poll::Ready(Err(err)) => {
                     if err.kind() == std::io::ErrorKind::WouldBlock {
+                        warn!("Inner stream would block");
                         return Poll::Pending;
                     } else {
                         error!(target: "ratsio", "poll_next stream error - {:?}", err);

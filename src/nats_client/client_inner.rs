@@ -188,17 +188,17 @@ impl NatsClientInner {
     pub(in crate::nats_client) async fn start(self_arc: Arc<Self>, version: u128, mut stream: SplitStream<NatsTcpStream>) -> Result<(), RatsioError> {
         let opts = self_arc.opts.clone();
         //Register for NATS incoming messages
-        //let mut executor = futures::executor::LocalPool::new();
         let stream_self = self_arc.clone();
         let _ = tokio::spawn(async move {
             while let Some(item) = stream.next().await {
                 if !stream_self.is_current_version(version).await {
+                    error!("Version mismatch, interrupting stream");
                     break;
                 }
                 stream_self.process_nats_event(item).await
             }
+            warn!("Stream has completed");
         });
-        //executor.run();
         let connect = Op::CONNECT(Connect {
             verbose: opts.verbose,
             pedantic: opts.pedantic,
@@ -228,9 +228,14 @@ impl NatsClientInner {
     }
 
     pub(in crate::nats_client) async fn process_nats_event(&self, item: Op) {
-        debug!("Processing item {:?}", item);
         self.ping_pong_reset().await;
         match item {
+            Op::OK => {
+                trace!("Received Ok event");
+            }
+            Op::PONG => {
+                trace!("Received Pong event");
+            }
             Op::CLOSE => {
                 let _ = self.stop().await;
             }
@@ -239,25 +244,24 @@ impl NatsClientInner {
                 *info = Some(server_info)
             }
             Op::PING => {
-                match self.send_command(Op::PONG).await {
-                    Err(err) => {
-                        error!(" Error sending PONG to Nats {:?}", err);
-                    }
-                    _ => {}
+                if let Err(err) = self.send_command(Op::PONG).await {
+                    error!(" Error sending PONG to Nats {:?}", err);
                 }
             }
             Op::MSG(message) => {
                 let subscriptions = self.subscriptions.lock().await;
                 if let Some((sender, _)) = subscriptions.get(&message.sid) {
-                    match sender.send(ClosableMessage::Message(message)) {
-                        Err(err) => {
-                            error!("Unable to send message to subscription - {:?}", err);
-                        }
-                        _ => {}
+                    debug!("Forwarding message for subscription {}", message.sid);
+                    if let Err(err) = sender.send(ClosableMessage::Message(message)) {
+                        error!("Unable to send message to subscription - {:?}", err);
                     }
+                } else {
+                    debug!("No subscriptions for {}", message.sid);
                 }
             }
-            _ => {}
+            _ => {
+                debug!("Received unhandled message {:?}", item);
+            }
         }
     }
 
